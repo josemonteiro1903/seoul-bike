@@ -4,6 +4,10 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 from scipy import stats
+import plotly.graph_objects as go
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 # Configuração
 
@@ -176,6 +180,131 @@ with col4:
     st.plotly_chart(fig5, use_container_width=True)
     st.caption("Objetivo: identificar associações lineares entre variáveis numéricas.")
 
+st.divider()
+st.header("6. Modelo de regressão linear")
+
+st.write(
+    "O modelo estima a quantidade de bicicletas alugadas usando "
+    "informações climáticas, horário, calendário e condições de funcionamento."
+)
+
+colunas_modelo = [
+    "Hour",
+    "Temperature(°C)",
+    "Humidity(%)",
+    "Wind speed (m/s)",
+    "Visibility (10m)",
+    "Dew point temperature(°C)",
+    "Solar Radiation (MJ/m2)",
+    "Rainfall(mm)",
+    "Snowfall (cm)",
+    "Seasons",
+    "Holiday",
+    "Functioning Day"
+]
+
+dados_modelo = df_filtrado[
+    ["Rented Bike Count"] + colunas_modelo
+].dropna().copy()
+
+X = pd.get_dummies(
+    dados_modelo[colunas_modelo],
+    columns=["Seasons", "Holiday", "Functioning Day"],
+    drop_first=True,
+    dtype=int
+)
+
+y = dados_modelo["Rented Bike Count"]
+
+if len(dados_modelo) < 30:
+    st.warning("Há poucos registros para uma avaliação confiável do modelo.")
+else:
+    indices = np.arange(len(dados_modelo))
+    treino_idx, teste_idx = train_test_split(
+        indices,
+        test_size=0.2,
+        random_state=42,
+        shuffle=True
+    )
+
+    modelo = LinearRegression()
+    modelo.fit(X.iloc[treino_idx], y.iloc[treino_idx])
+
+    previsoes = modelo.predict(X.iloc[teste_idx])
+    valores_reais = y.iloc[teste_idx].to_numpy()
+
+    mae = mean_absolute_error(valores_reais, previsoes)
+    rmse = np.sqrt(mean_squared_error(valores_reais, previsoes))
+    r2 = r2_score(valores_reais, previsoes)
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("MAE", f"{mae:.2f}")
+    m2.metric("RMSE", f"{rmse:.2f}")
+    m3.metric("R²", f"{r2:.3f}")
+
+    st.caption(
+        "MAE e RMSE medem o erro das previsões em unidades de bicicletas. "
+        "Quanto menores, melhor; o R² mede a proporção da variação explicada "
+        "pelo modelo no conjunto de teste."
+    )
+
+    fig6 = go.Figure()
+
+    fig6.add_trace(
+        go.Scatter(
+            x=valores_reais,
+            y=previsoes,
+            mode="markers",
+            name="Previsões",
+            marker=dict(opacity=0.5)
+        )
+    )
+
+    minimo = min(valores_reais.min(), previsoes.min())
+    maximo = max(valores_reais.max(), previsoes.max())
+
+    fig6.add_trace(
+        go.Scatter(
+            x=[minimo, maximo],
+            y=[minimo, maximo],
+            mode="lines",
+            name="Previsão ideal"
+        )
+    )
+
+    fig6.update_layout(
+        xaxis_title="Quantidade real de bicicletas",
+        yaxis_title="Quantidade prevista de bicicletas",
+        legend_title="Série"
+    )
+
+    st.plotly_chart(fig6, use_container_width=True)
+    st.caption(
+        "Objetivo: comparar previsões e valores observados. "
+        "Pontos próximos da linha representam previsões mais precisas."
+    )
+
+    coeficientes = pd.DataFrame({
+        "Variável": X.columns,
+        "Coeficiente": modelo.coef_
+    })
+
+    coeficientes["Impacto absoluto"] = coeficientes["Coeficiente"].abs()
+    coeficientes = coeficientes.sort_values(
+        "Impacto absoluto",
+        ascending=False
+    )
+
+    with st.expander("Consultar coeficientes do modelo"):
+        st.dataframe(
+            coeficientes.drop(columns="Impacto absoluto"),
+            use_container_width=True,
+            hide_index=True
+        )
+        st.caption(
+            "Cada coeficiente representa a variação estimada na demanda "
+            "associada a uma unidade da variável, mantendo as demais constantes."
+        )
 
 st.divider()
 st.header("🧪 7. Teste de hipótese: chuva e demanda")
