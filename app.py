@@ -8,6 +8,8 @@ import plotly.graph_objects as go
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import statsmodels.api as sm
+from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 # Configuração
 
@@ -24,6 +26,19 @@ df = pd.read_csv(
     "data/SeoulBikeData.csv",
     encoding='unicode_escape'
 )
+
+df_tratado = df.copy()
+
+df_tratado['Date'] = pd.to_datetime(df_tratado['Date'], format='%d/%m/%Y')
+df_tratado['IsWeekend'] = df_tratado['Date'].dt.dayofweek.isin([5, 6]).astype(int)
+
+df_tratado = df_tratado[df_tratado['Functioning Day'] == 'Yes'].copy()
+df_tratado = df_tratado.drop(columns=['Functioning Day'])
+
+df_tratado = pd.get_dummies(df_tratado, columns=['Seasons'], drop_first=True)
+
+df_tratado['Holiday_Yes'] = (df_tratado['Holiday'] == 'Holiday').astype(int)
+df_tratado = df_tratado.drop(columns=['Holiday'])
 
 st.sidebar.header("Filtros")
 
@@ -306,6 +321,62 @@ else:
             "associada a uma unidade da variável, mantendo as demais constantes."
         )
 
+        st.divider()
+st.header("📈 Modelo de regressão linear")
+
+colunas_modelo = [
+    'Rented Bike Count',
+    'Hour',
+    'Temperature(°C)',
+    'Humidity(%)',
+    'Wind speed (m/s)',
+    'Solar Radiation (MJ/m2)',
+    'Rainfall(mm)',
+    'Snowfall (cm)',
+    'IsWeekend',
+    'Seasons_Spring',
+    'Seasons_Summer',
+    'Seasons_Winter',
+    'Holiday_Yes'
+]
+
+df_modelo = df_tratado[colunas_modelo].copy()
+
+X = df_modelo.drop(columns=['Rented Bike Count'])
+y = df_modelo['Rented Bike Count']
+X = sm.add_constant(X)
+
+modelo = sm.OLS(y, X).fit()
+
+st.subheader("Desempenho do modelo")
+c1, c2, c3 = st.columns(3)
+c1.metric("R²", f"{modelo.rsquared:.3f}")
+c2.metric("R² ajustado", f"{modelo.rsquared_adj:.3f}")
+c3.metric("F-statistic", f"{modelo.fvalue:.1f}")
+
+st.subheader("Coeficientes")
+coeficientes = pd.DataFrame({
+    'Variável': modelo.params.index,
+    'Coeficiente': modelo.params.values,
+    'P-valor': modelo.pvalues.values,
+    'IC inferior': modelo.conf_int()[0].values,
+    'IC superior': modelo.conf_int()[1].values
+})
+coeficientes['P-valor'] = coeficientes['P-valor'].apply(lambda x: f"{x:.5f}")
+st.dataframe(coeficientes)
+
+st.subheader("Coeficientes do modelo")
+fig_coef = px.bar(
+    coeficientes[coeficientes['Variável'] != 'const'],
+    x='Coeficiente',
+    y='Variável',
+    orientation='h',
+    color='Coeficiente',
+    color_continuous_scale='RdBu_r',
+    labels={'Coeficiente': 'Coeficiente', 'Variável': 'Variável'}
+)
+st.plotly_chart(fig_coef, use_container_width=True)
+
 st.divider()
 st.header("🧪 7. Teste de hipótese: chuva e demanda")
 
@@ -324,6 +395,7 @@ st.caption(
     "São considerados dias chuvosos aqueles com precipitação total diária "
     "maior que zero. A análise considera somente dias de funcionamento."
 )
+
 
 # Preparação dos dados diários
 dados_teste = df[
@@ -508,6 +580,176 @@ else:
         "comprova causalidade."
     )
 st.divider()
+
+st.divider()
+st.header("🧪 8. Teste de hipótese: feriado e demanda")
+
+st.markdown("""
+**Objetivo:** investigar se a demanda média por hora difere entre feriados e dias normais.
+
+- **H₀:** a média de aluguéis por hora é igual nos dois grupos.
+- **H₁:** a média de aluguéis por hora é diferente nos dois grupos.
+- **Nível de significância:** 5% (α = 0,05).
+- **Teste:** teste t de Welch para duas amostras independentes.
+- **Intervalo de confiança:** 95% para a diferença entre as médias.
+""")
+
+grupo_feriado = df_tratado.loc[df_tratado['Holiday_Yes'] == 1, 'Rented Bike Count'].dropna()
+grupo_nao_feriado = df_tratado.loc[df_tratado['Holiday_Yes'] == 0, 'Rented Bike Count'].dropna()
+
+if len(grupo_feriado) < 2 or len(grupo_nao_feriado) < 2:
+    st.warning("Não há dados suficientes em ambos os grupos para executar o teste.")
+else:
+    media_feriado = grupo_feriado.mean()
+    media_nao_feriado = grupo_nao_feriado.mean()
+    diferenca = media_feriado - media_nao_feriado
+
+    n_feriado = len(grupo_feriado)
+    n_nao_feriado = len(grupo_nao_feriado)
+
+    var_feriado = grupo_feriado.var(ddof=1)
+    var_nao_feriado = grupo_nao_feriado.var(ddof=1)
+
+    resultado = stats.ttest_ind(
+        grupo_feriado,
+        grupo_nao_feriado,
+        equal_var=False,
+        alternative='two-sided'
+    )
+
+    valor_p = resultado.pvalue
+    estatistica_t = resultado.statistic
+
+    termo_feriado = var_feriado / n_feriado
+    termo_nao_feriado = var_nao_feriado / n_nao_feriado
+    erro_padrao = np.sqrt(termo_feriado + termo_nao_feriado)
+
+    graus_liberdade = (
+        (termo_feriado + termo_nao_feriado) ** 2
+        / (
+            termo_feriado ** 2 / (n_feriado - 1)
+            + termo_nao_feriado ** 2 / (n_nao_feriado - 1)
+        )
+    )
+
+    t_critico = stats.t.ppf(0.975, df=graus_liberdade)
+    limite_inferior = diferenca - t_critico * erro_padrao
+    limite_superior = diferenca + t_critico * erro_padrao
+
+    a, b, c = st.columns(3)
+    a.metric("Média feriado", f"{media_feriado:,.0f}".replace(",", "."))
+    b.metric("Média não feriado", f"{media_nao_feriado:,.0f}".replace(",", "."))
+    c.metric("Diferença", f"{diferenca:+,.0f}".replace(",", "."))
+
+    st.subheader("Comparação da demanda")
+
+    fig_feriado = px.box(
+        df_tratado,
+        x='Holiday_Yes',
+        y='Rented Bike Count',
+        color='Holiday_Yes',
+        labels={
+            'Holiday_Yes': 'Feriado (1 = sim, 0 = não)',
+            'Rented Bike Count': 'Bicicletas alugadas por hora'
+        }
+    )
+    st.plotly_chart(fig_feriado, use_container_width=True)
+
+    st.subheader("Resultado do teste estatístico")
+
+    x, y, z = st.columns(3)
+    x.metric("Estatística t", f"{estatistica_t:.3f}")
+    y.metric("Valor-p", f"{valor_p:.5f}")
+    z.metric("Graus de liberdade", f"{graus_liberdade:.1f}")
+
+    st.markdown("**Intervalo de confiança de 95% para a diferença das médias**")
+    st.write(f"Limite inferior: **{limite_inferior:,.2f} bicicletas/hora**")
+    st.write(f"Limite superior: **{limite_superior:,.2f} bicicletas/hora**")
+
+    st.divider()
+st.header("🧪 9. Teste de hipótese: fim de semana e demanda")
+
+st.markdown("""
+**Objetivo:** investigar se a demanda média por hora difere entre fins de semana e dias úteis.
+
+- **H₀:** a média de aluguéis por hora é igual nos dois grupos.
+- **H₁:** a média de aluguéis por hora é diferente nos dois grupos.
+- **Nível de significância:** 5% (α = 0,05).
+- **Teste:** teste t de Welch para duas amostras independentes.
+- **Intervalo de confiança:** 95% para a diferença entre as médias.
+""")
+
+grupo_fim_semana = df_tratado.loc[df_tratado['IsWeekend'] == 1, 'Rented Bike Count'].dropna()
+grupo_dia_util = df_tratado.loc[df_tratado['IsWeekend'] == 0, 'Rented Bike Count'].dropna()
+
+if len(grupo_fim_semana) < 2 or len(grupo_dia_util) < 2:
+    st.warning("Não há dados suficientes em ambos os grupos para executar o teste.")
+else:
+    media_fim_semana = grupo_fim_semana.mean()
+    media_dia_util = grupo_dia_util.mean()
+    diferenca = media_fim_semana - media_dia_util
+
+    n_fim_semana = len(grupo_fim_semana)
+    n_dia_util = len(grupo_dia_util)
+
+    var_fim_semana = grupo_fim_semana.var(ddof=1)
+    var_dia_util = grupo_dia_util.var(ddof=1)
+
+    resultado = stats.ttest_ind(
+        grupo_fim_semana,
+        grupo_dia_util,
+        equal_var=False,
+        alternative='two-sided'
+    )
+
+    valor_p = resultado.pvalue
+    estatistica_t = resultado.statistic
+
+    termo_fim_semana = var_fim_semana / n_fim_semana
+    termo_dia_util = var_dia_util / n_dia_util
+    erro_padrao = np.sqrt(termo_fim_semana + termo_dia_util)
+
+    graus_liberdade = (
+        (termo_fim_semana + termo_dia_util) ** 2
+        / (
+            termo_fim_semana ** 2 / (n_fim_semana - 1)
+            + termo_dia_util ** 2 / (n_dia_util - 1)
+        )
+    )
+
+    t_critico = stats.t.ppf(0.975, df=graus_liberdade)
+    limite_inferior = diferenca - t_critico * erro_padrao
+    limite_superior = diferenca + t_critico * erro_padrao
+
+    a, b, c = st.columns(3)
+    a.metric("Média fim de semana", f"{media_fim_semana:,.0f}".replace(",", "."))
+    b.metric("Média dia útil", f"{media_dia_util:,.0f}".replace(",", "."))
+    c.metric("Diferença", f"{diferenca:+,.0f}".replace(",", "."))
+
+    st.subheader("Comparação da demanda")
+
+    fig_fim_semana = px.box(
+        df_tratado,
+        x='IsWeekend',
+        y='Rented Bike Count',
+        color='IsWeekend',
+        labels={
+            'IsWeekend': 'Fim de semana (1 = sim, 0 = não)',
+            'Rented Bike Count': 'Bicicletas alugadas por hora'
+        }
+    )
+    st.plotly_chart(fig_fim_semana, use_container_width=True)
+
+    st.subheader("Resultado do teste estatístico")
+
+    x, y, z = st.columns(3)
+    x.metric("Estatística t", f"{estatistica_t:.3f}")
+    y.metric("Valor-p", f"{valor_p:.5f}")
+    z.metric("Graus de liberdade", f"{graus_liberdade:.1f}")
+
+    st.markdown("**Intervalo de confiança de 95% para a diferença das médias**")
+    st.write(f"Limite inferior: **{limite_inferior:,.2f} bicicletas/hora**")
+    st.write(f"Limite superior: **{limite_superior:,.2f} bicicletas/hora**")
 
 # Tabela
 
