@@ -1,4 +1,4 @@
-# Import de bibliotecas
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -11,7 +11,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import statsmodels.api as sm
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 
-# Configuração
+
 
 st.set_page_config(
     page_title="Seoul Bike",
@@ -20,7 +20,7 @@ st.set_page_config(
 
 st.title("📊 Mobilidade urbana e condições climáticas")
 
-# Leitura dos dados
+
 
 df = pd.read_csv(
     "data/SeoulBikeData.csv",
@@ -258,10 +258,9 @@ else:
     m3.metric("R²", f"{r2:.3f}")
 
     st.caption(
-        "MAE e RMSE medem o erro das previsões em unidades de bicicletas. "
-        "Quanto menores, melhor; o R² mede a proporção da variação explicada "
-        "pelo modelo no conjunto de teste."
-    )
+    "MAE e RMSE medem o erro das previsões em unidades de bicicletas. "
+    "O R² mede a proporção da variação explicada pelo modelo no conjunto de teste."
+)
 
     fig6 = go.Figure()
 
@@ -294,10 +293,7 @@ else:
     )
 
     st.plotly_chart(fig6, use_container_width=True)
-    st.caption(
-        "Objetivo: comparar previsões e valores observados. "
-        "Pontos próximos da linha representam previsões mais precisas."
-    )
+    st.caption("Objetivo: comparar previsões e valores observados.")
 
     coeficientes = pd.DataFrame({
         "Variável": X.columns,
@@ -315,10 +311,6 @@ else:
             coeficientes.drop(columns="Impacto absoluto"),
             use_container_width=True,
             hide_index=True
-        )
-        st.caption(
-            "Cada coeficiente representa a variação estimada na demanda "
-            "associada a uma unidade da variável, mantendo as demais constantes."
         )
 
         st.divider()
@@ -383,12 +375,6 @@ st.header("🧪 7. Teste de hipótese: chuva e demanda")
 st.markdown("""
 **Objetivo:** investigar se a demanda diária por bicicletas compartilhadas
 difere entre dias chuvosos e dias sem chuva.
-
-- **H₀:** a média da demanda diária é igual nos dois grupos.
-- **H₁:** a média da demanda diária é diferente nos dois grupos.
-- **Nível de significância:** 5% (α = 0,05).
-- **Teste:** teste t de Welch para duas amostras independentes.
-- **Intervalo de confiança:** 95% para a diferença entre as médias.
 """)
 
 st.caption(
@@ -397,7 +383,7 @@ st.caption(
 )
 
 
-# Preparação dos dados diários
+
 dados_teste = df[
     (df["Functioning Day"] == "Yes")
     & (df["Seasons"].isin(estacoes_selecionadas))
@@ -434,7 +420,7 @@ if len(grupo_chuva) < 2 or len(grupo_sem_chuva) < 2:
         "o teste. Altere os filtros e tente novamente."
     )
 else:
-    # Estatísticas descritivas
+
     media_chuva = grupo_chuva.mean()
     media_sem_chuva = grupo_sem_chuva.mean()
     diferenca = media_chuva - media_sem_chuva
@@ -445,7 +431,7 @@ else:
     variancia_chuva = grupo_chuva.var(ddof=1)
     variancia_sem_chuva = grupo_sem_chuva.var(ddof=1)
 
-    # Teste t de Welch
+
     resultado = stats.ttest_ind(
         grupo_chuva,
         grupo_sem_chuva,
@@ -456,7 +442,7 @@ else:
     valor_p = resultado.pvalue
     estatistica_t = resultado.statistic
 
-    # Erro-padrão e graus de liberdade de Welch
+
     termo_chuva = variancia_chuva / n_chuva
     termo_sem_chuva = variancia_sem_chuva / n_sem_chuva
 
@@ -470,7 +456,7 @@ else:
         )
     )
 
-    # Intervalo de confiança de 95%
+
     t_critico = stats.t.ppf(
         0.975,
         df=graus_liberdade
@@ -479,7 +465,7 @@ else:
     limite_inferior = diferenca - t_critico * erro_padrao
     limite_superior = diferenca + t_critico * erro_padrao
 
-    # Indicadores
+
     a, b, c = st.columns(3)
 
     a.metric(
@@ -543,55 +529,12 @@ else:
 
     alpha = 0.05
 
-    if valor_p < alpha:
-        st.success(
-            "Rejeitamos H₀ ao nível de 5%. Há evidência estatística "
-            "de diferença entre as médias de demanda diária dos dois grupos."
-        )
-    else:
-        st.info(
-            "Não rejeitamos H₀ ao nível de 5%. Os dados não fornecem "
-            "evidência estatística suficiente para afirmar que as médias "
-            "de demanda diária diferem."
-        )
-
-    if limite_inferior > 0:
-        st.write(
-            "O intervalo de confiança sugere maior demanda média "
-            "nos dias chuvosos."
-        )
-    elif limite_superior < 0:
-        st.write(
-            "O intervalo de confiança sugere menor demanda média "
-            "nos dias chuvosos."
-        )
-    else:
-        st.write(
-            "O intervalo de confiança inclui zero, indicando que "
-            "a diferença entre as médias é compatível com ausência "
-            "de diferença estatística ao nível de 5%."
-        )
-
-    st.caption(
-        "Limitação: o teste pressupõe independência entre as observações "
-        "diárias e usa uma aproximação para a distribuição das médias. "
-        "Dias consecutivos podem apresentar dependência temporal; por isso, "
-        "o resultado deve ser interpretado com cautela. Associação não "
-        "comprova causalidade."
-    )
-st.divider()
 
 st.divider()
 st.header("🧪 8. Teste de hipótese: feriado e demanda")
 
 st.markdown("""
 **Objetivo:** investigar se a demanda média por hora difere entre feriados e dias normais.
-
-- **H₀:** a média de aluguéis por hora é igual nos dois grupos.
-- **H₁:** a média de aluguéis por hora é diferente nos dois grupos.
-- **Nível de significância:** 5% (α = 0,05).
-- **Teste:** teste t de Welch para duas amostras independentes.
-- **Intervalo de confiança:** 95% para a diferença entre as médias.
 """)
 
 grupo_feriado = df_tratado.loc[df_tratado['Holiday_Yes'] == 1, 'Rented Bike Count'].dropna()
@@ -671,12 +614,6 @@ st.header("🧪 9. Teste de hipótese: fim de semana e demanda")
 
 st.markdown("""
 **Objetivo:** investigar se a demanda média por hora difere entre fins de semana e dias úteis.
-
-- **H₀:** a média de aluguéis por hora é igual nos dois grupos.
-- **H₁:** a média de aluguéis por hora é diferente nos dois grupos.
-- **Nível de significância:** 5% (α = 0,05).
-- **Teste:** teste t de Welch para duas amostras independentes.
-- **Intervalo de confiança:** 95% para a diferença entre as médias.
 """)
 
 grupo_fim_semana = df_tratado.loc[df_tratado['IsWeekend'] == 1, 'Rented Bike Count'].dropna()
@@ -754,4 +691,4 @@ else:
 # Tabela
 
 st.subheader("Dados filtrados")
-st.dataframe(df)
+st.dataframe(df_filtrado)
